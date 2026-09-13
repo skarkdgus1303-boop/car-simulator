@@ -70,6 +70,7 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050510);
@@ -90,17 +91,14 @@
         dirLight.castShadow = true;
         scene.add(dirLight);
 
-        // 🛣️ 진짜 도로 환경 조성 (아스팔트 + 차선 + 가로등/건물 배경)
+        // 🛣️ 진짜 도로 환경 조성
         const roadGroup = new THREE.Group();
-        
-        // 메인 도로 (폭 16m)
         const roadMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
         const road = new THREE.Mesh(new THREE.PlaneGeometry(16, 10000), roadMat);
         road.rotation.x = -Math.PI / 2;
         road.receiveShadow = true;
         roadGroup.add(road);
 
-        // 중앙선 (노란색)
         const lineMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
         for(let i = -5000; i < 5000; i += 10) {
             const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 5), lineMat);
@@ -109,7 +107,6 @@
             roadGroup.add(centerLine);
         }
 
-        // 양옆 인도 및 가로등/빌딩 배치
         const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
         const leftSidewalk = new THREE.Mesh(new THREE.BoxGeometry(4, 0.2, 10000), sidewalkMat);
         leftSidewalk.position.set(-10, 0.1, 0);
@@ -119,14 +116,11 @@
         rightSidewalk.position.set(10, 0.1, 0);
         roadGroup.add(rightSidewalk);
 
-        // 가로등 및 빌딩 가벽 세우기
         for(let i = -4000; i < 4000; i += 60) {
-            // 가로등 기둥
             const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 8), new THREE.MeshStandardMaterial({color: 0x444}));
             pole.position.set(-11, 4, i);
             roadGroup.add(pole);
 
-            // 원거리 빌딩 배경
             const bHeight = 40 + Math.random() * 60;
             const buildingMat = new THREE.MeshStandardMaterial({ color: 0x111622, roughness: 0.5 });
             const leftBldg = new THREE.Mesh(new THREE.BoxGeometry(25, bHeight, 30), buildingMat);
@@ -139,7 +133,7 @@
         }
         scene.add(roadGroup);
 
-        // 🔊 Web Audio API를 활용한 사운드 시스템 (엔진음 + 깜빡이/비상등 효과음)
+        // 🔊 사운드 시스템
         let audioCtx = null;
         let engineOsc = null;
         let engineGain = null;
@@ -148,7 +142,6 @@
             if (audioCtx) return;
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             
-            // 엔진 소리 (저주파 진동음)
             engineOsc = audioCtx.createOscillator();
             engineOsc.type = 'sawtooth';
             engineOsc.frequency.setValueAtTime(40, audioCtx.currentTime);
@@ -166,7 +159,6 @@
             engineOsc.start();
         }
 
-        // 비상등/깜빡이 "틱-톡" 효과음 함수
         function playTickSound() {
             if (!audioCtx) return;
             const osc = audioCtx.createOscillator();
@@ -195,7 +187,6 @@
         let blinkTimer = 0;
         let isFirstPerson = false;
 
-        // 마우스 드래그 시점 회전 변수
         let isDragging = false;
         let mouseX = 0, mouseY = 0;
         let cameraAngleY = 0;
@@ -216,8 +207,12 @@
 
         const keys = { up: false, down: false, left: false, right: false };
 
-        // 🚗 3D 자동차 모델 로드
+        // 🚗 3D 자동차 모델 및 DRACO 복호화 설정 적용
         const loader = new GLTFLoader();
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.5/'); //
+        loader.setDRACOLoader(dracoLoader); //
+
         loader.load(
             'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/ferrari.glb',
             (gltf) => {
@@ -280,7 +275,7 @@
                 }
                 if (key === 'C') {
                     isFirstPerson = !isFirstPerson;
-                    cameraAngleY = 0; // 시점 전환 시 초기화
+                    cameraAngleY = 0;
                 }
             }
         }
@@ -305,18 +300,15 @@
 
             car.translateZ(speed);
 
-            // 속도계 업데이트
             const kmh = Math.round(Math.abs(speed) * 180);
             document.getElementById('speedo').innerText = `${kmh} km/h`;
 
-            // 엔진 소리 실시간 제어
             if (engineGain && audioCtx) {
                 const engineVol = Math.min(0.25, Math.abs(speed) * 0.2);
                 engineGain.gain.setTargetAtTime(engineVol, audioCtx.currentTime, 0.1);
                 engineOsc.frequency.setTargetAtTime(40 + Math.abs(speed) * 90, audioCtx.currentTime, 0.1);
             }
 
-            // 비상등 / 깜빡이 효과음 타이머 처리
             blinkTimer += 0.016;
             const currentBlinkState = Math.floor(blinkTimer * 3.5) % 2 === 0;
             if (currentBlinkState !== lastBlinkState && (hazardOn || leftBlinker || rightBlinker)) {
@@ -324,7 +316,6 @@
                 lastBlinkState = currentBlinkState;
             }
 
-            // 카메라 시점 제어 (마우스 드래그 자유 회전 및 1인칭/3인칭)
             if (isFirstPerson) {
                 camera.position.set(
                     car.position.x - Math.sin(car.rotation.y) * 0.2,
@@ -338,7 +329,6 @@
                 );
                 camera.lookAt(lookTarget);
             } else {
-                // 3인칭 마우스 드래그 궤도 시점
                 const dist = 7;
                 const camX = car.position.x - Math.sin(car.rotation.y + cameraAngleY) * dist;
                 const camZ = car.position.z - Math.cos(car.rotation.y + cameraAngleY) * dist;
