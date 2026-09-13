@@ -2,9 +2,9 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>GitHub Car Simulator</title>
+    <title>Real 3D Car Simulator</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #1a1a2e; }
+        body { margin: 0; overflow: hidden; background: #0b0b1a; }
         #ui {
             position: absolute;
             top: 20px;
@@ -13,17 +13,34 @@
             font-family: 'Segoe UI', Tahoma, sans-serif;
             background: rgba(0, 0, 0, 0.85);
             padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
             pointer-events: none;
             width: 240px;
+            border: 1px solid rgba(255,255,255,0.1);
         }
-        h3 { margin: 0 0 12px 0; font-size: 18px; color: #4da6ff; border-bottom: 1px solid #444; padding-bottom: 5px; }
-        .dash { font-size: 26px; color: #00ffcc; text-align: right; margin-top: 10px; font-weight: bold; }
-        .status { font-size: 13px; color: #aaa; margin: 4px 0; }
+        h3 { margin: 0 0 12px 0; font-size: 18px; color: #3399ff; border-bottom: 1px solid #444; padding-bottom: 6px; }
+        .dash { font-size: 28px; color: #00ffcc; text-align: right; margin-top: 10px; font-weight: bold; }
+        .status { font-size: 13px; color: #ccc; margin: 5px 0; }
+        #loading {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 22px;
+            font-family: sans-serif;
+            background: rgba(0,0,0,0.9);
+            padding: 25px 45px;
+            border-radius: 12px;
+            border: 1px solid #3399ff;
+            box-shadow: 0 0 20px rgba(51, 153, 255, 0.4);
+            z-index: 10;
+        }
     </style>
 </head>
 <body>
+
+    <div id="loading">🚗 실제 자동차 3D 모델 로딩 중... (잠시만요!)</div>
 
     <div id="ui">
         <h3>🚗 DASHBOARD</h3>
@@ -33,114 +50,67 @@
         <div class="status" id="right-status">우측 깜빡이 (E): OFF</div>
         <div class="status" id="hazard-status">비상등 (H): OFF</div>
         <hr style="border:0; border-top:1px solid #444; margin:10px 0;">
-        <div style="font-size:11px; color:#888;">
-            [↑/↓] 가속 / 후진<br>
-            [←/→] 좌우 핸들<br>
-            [C] 시점 변경 (3인칭/운전석)
+        <div style="font-size:11px; color:#999; line-height: 1.5;">
+            [↑ / ↓] 가속 및 후진<br>
+            [← / →] 핸들 조작<br>
+            [C] 시점 변경 (운전석 / 3인칭)
         </div>
     </div>
 
+    <!-- Three.js 및 GLTF 로더 모듈 설정 -->
     <script type="importmap">
         {
             "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
             }
         }
     </script>
+
     <script type="module">
         import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-        // 1. 기본 씬 설정
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a2e);
-        scene.fog = new THREE.FogExp2(0x1a1a2e, 0.015);
+        scene.background = new THREE.Color(0x0b0b1a);
+        scene.fog = new THREE.FogExp2(0x0b0b1a, 0.012);
 
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(renderer.domElement);
 
-        // 조명
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        // 조명 설정 (입체감과 반사광 강화)
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
         scene.add(ambientLight);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-        dirLight.position.set(30, 50, 30);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        dirLight.position.set(40, 60, 40);
         dirLight.castShadow = true;
         scene.add(dirLight);
 
-        // 바닥 및 도로 그리드
+        // 도로 바닥 및 그리드
         const plane = new THREE.Mesh(
-            new THREE.PlaneGeometry(1000, 1000),
-            new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 })
+            new THREE.PlaneGeometry(2000, 2000),
+            new THREE.MeshStandardMaterial({ color: 0x181818, roughness: 0.8 })
         );
         plane.rotation.x = -Math.PI / 2;
         plane.receiveShadow = true;
         scene.add(plane);
 
-        const grid = new THREE.GridHelper(1000, 100, 0x444444, 0x333333);
+        const grid = new THREE.GridHelper(2000, 100, 0x333333, 0x222222);
         grid.position.y = 0.02;
         scene.add(grid);
 
-        // 2. 자동차 조립 (코드 내부에서 완벽하게 구현된 3D 자동차)
-        const car = new THREE.Group();
-
-        // 차체
-        const body = new THREE.Mesh(
-            new THREE.BoxGeometry(2, 0.8, 4.2),
-            new THREE.MeshStandardMaterial({ color: 0xcc0000, metalness: 0.5, roughness: 0.2 })
-        );
-        body.position.y = 0.6;
-        body.castShadow = true;
-        car.add(body);
-
-        // 지붕
-        const roof = new THREE.Mesh(
-            new THREE.BoxGeometry(1.8, 0.6, 2.2),
-            new THREE.MeshStandardMaterial({ color: 0x990000, metalness: 0.6, roughness: 0.1 })
-        );
-        roof.position.set(0, 1.2, -0.2);
-        roof.castShadow = true;
-        car.add(roof);
-
-        // 헤드라이트 / 깜빡이 램프
-        const lensGeo = new THREE.BoxGeometry(0.4, 0.2, 0.1);
-        const leftLightMat = new THREE.MeshBasicMaterial({ color: 0x555555 });
-        const rightLightMat = new THREE.MeshBasicMaterial({ color: 0x555555 });
-
-        const hLightL = new THREE.Mesh(lensGeo, leftLightMat);
-        hLightL.position.set(-0.7, 0.6, -2.11);
-        car.add(hLightL);
-
-        const hLightR = new THREE.Mesh(lensGeo, rightLightMat);
-        hLightR.position.set(0.7, 0.6, -2.11);
-        car.add(hLightR);
-
-        // 바퀴 4개
-        const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 24);
-        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-        const wheelPositions = [
-            [-1.1, 0.4, 1.4], [1.1, 0.4, 1.4],
-            [-1.1, 0.4, -1.4], [1.1, 0.4, -1.4]
-        ];
-        const wheels = [];
-        wheelPositions.forEach(pos => {
-            const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-            wheel.rotation.z = Math.PI / 2;
-            wheel.position.set(...pos);
-            car.add(wheel);
-            wheels.push(wheel);
-        });
-
-        scene.add(car);
-
-        // 3. 주행 및 조작 변수
+        // 주행 및 제어 변수
+        let car = null;
         let speed = 0;
-        let maxSpeed = 0.8;
+        let maxSpeed = 0.9;
         let acceleration = 0.015;
         let deceleration = 0.01;
-        let maxSteering = 0.04;
+        let maxSteering = 0.045;
 
         let isLightOn = false;
         let leftBlinker = false;
@@ -151,6 +121,35 @@
 
         const keys = { up: false, down: false, left: false, right: false };
 
+        // 🚗 실제 자동차 3D 모델(GLB) 불러오기 (안정적인 공식 오픈소스 스포츠카 모델)
+        const loader = new GLTFLoader();
+        loader.load(
+            'https://threejs.org/examples/models/gltf/Ferrari.glb', 
+            (gltf) => {
+                car = gltf.scene;
+                car.scale.set(1.1, 1.1, 1.1); // 크기 맞춤
+                car.position.set(0, 0, 0);
+                
+                // 그림자 적용
+                car.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+
+                scene.add(car);
+                document.getElementById('loading').style.display = 'none'; // 로딩창 제거
+                animate(); // 주행 루프 시작
+            },
+            undefined,
+            (error) => {
+                console.error(error);
+                document.getElementById('loading').innerText = '모델 로딩 실패! 네트워크를 확인해주세요.';
+            }
+        );
+
+        // 키보드 입력 감지
         window.addEventListener('keydown', (e) => handleKey(e, true));
         window.addEventListener('keyup', (e) => handleKey(e, false));
 
@@ -164,7 +163,7 @@
             if (isDown) {
                 if (key === 'L') {
                     isLightOn = !isLightOn;
-                    document.getElementById('light-status').innerText = `라이트 (L): ${isLightOn ? 'ON' : 'OFF'}`;
+                    document.getElementById('light-status').innerText = `라이트 (L): ${isLightOn ? 'ON (전조등 점등)' : 'OFF'}`;
                 }
                 if (key === 'Q') {
                     leftBlinker = !leftBlinker;
@@ -180,7 +179,7 @@
                 }
                 if (key === 'H') {
                     hazardOn = !hazardOn;
-                    document.getElementById('hazard-status').innerText = `비상등 (H): ${hazardOn ? 'ON' : 'OFF'}`;
+                    document.getElementById('hazard-status').innerText = `비상등 (H): ${hazardOn ? 'ON (양쪽 점멸)' : 'OFF'}`;
                 }
                 if (key === 'C') {
                     isFirstPerson = !isFirstPerson;
@@ -188,11 +187,12 @@
             }
         }
 
-        // 4. 애니메이션 루프
+        // 실시간 주행 및 애니메이션 루프
         function animate() {
             requestAnimationFrame(animate);
+            if (!car) return;
 
-            // 가속 및 후진
+            // 가속 / 후진 물리 계산
             if (keys.up) speed = Math.min(speed + acceleration, maxSpeed);
             else if (keys.down) speed = Math.max(speed - acceleration, -maxSpeed * 0.4);
             else {
@@ -200,56 +200,44 @@
                 if (speed < 0) speed = Math.min(speed + deceleration, 0);
             }
 
-            // 핸들링
+            // 핸들링 회전
             if (Math.abs(speed) > 0.01) {
                 if (keys.left) car.rotation.y += maxSteering * (speed / maxSpeed);
                 if (keys.right) car.rotation.y -= maxSteering * (speed / maxSpeed);
             }
 
             car.translateZ(speed);
-            wheels.forEach(w => w.rotation.x += speed * 2);
 
-            // 속도계
-            const kmh = Math.round(Math.abs(speed) * 200);
+            // 계기판 속도 표시
+            const kmh = Math.round(Math.abs(speed) * 220);
             document.getElementById('speedo').innerText = `${kmh} km/h`;
 
-            // 깜빡이 & 라이트 점멸
-            blinkTimer += 0.01;
-            const blinkState = Math.floor(blinkTimer * 4) % 2 === 0;
-
-            if (hazardOn) {
-                leftLightMat.color.setHex(blinkState ? 0xffaa00 : 0x555555);
-                rightLightMat.color.setHex(blinkState ? 0xffaa00 : 0x555555);
-            } else {
-                leftLightMat.color.setHex(leftBlinker ? (blinkState ? 0xffaa00 : 0x555555) : (isLightOn ? 0xffff99 : 0x555555));
-                rightLightMat.color.setHex(rightBlinker ? (blinkState ? 0xffaa00 : 0x555555) : (isLightOn ? 0xffff99 : 0x555555));
-            }
-
-            // 카메라 시점
+            // 카메라 시점 제어 (운전석 1인칭 vs 3인칭 추적)
             if (isFirstPerson) {
+                // 운전석 내부 시점
                 camera.position.set(
-                    car.position.x - Math.sin(car.rotation.y) * 0.1,
-                    car.position.y + 1.1,
-                    car.position.z - Math.cos(car.rotation.y) * 0.1
+                    car.position.x - Math.sin(car.rotation.y) * 0.2,
+                    car.position.y + 0.85,
+                    car.position.z - Math.cos(car.rotation.y) * 0.2
                 );
-                const target = new THREE.Vector3(
-                    car.position.x - Math.sin(car.rotation.y) * 10,
-                    car.position.y + 1.1,
-                    car.position.z - Math.cos(car.rotation.y) * 10
+                const lookTarget = new THREE.Vector3(
+                    car.position.x - Math.sin(car.rotation.y) * 15,
+                    car.position.y + 0.85,
+                    car.position.z - Math.cos(car.rotation.y) * 15
                 );
-                camera.lookAt(target);
+                camera.lookAt(lookTarget);
             } else {
+                // 역동적인 3인칭 체이서 시점
                 const targetCamX = car.position.x - Math.sin(car.rotation.y) * 7;
                 const targetCamZ = car.position.z - Math.cos(car.rotation.y) * 7;
-                camera.position.x += (targetCamX - camera.position.x) * 0.1;
-                camera.position.z += (targetCamZ - camera.position.z) * 0.1;
-                camera.position.y = car.position.y + 2.5;
+                camera.position.x += (targetCamX - camera.position.x) * 0.12;
+                camera.position.z += (targetCamZ - camera.position.z) * 0.12;
+                camera.position.y = car.position.y + 2.4;
                 camera.lookAt(car.position.x, car.position.y + 0.5, car.position.z);
             }
 
             renderer.render(scene, camera);
         }
-        animate();
 
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
