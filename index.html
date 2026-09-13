@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Instant Urban Car Simulator</title>
+    <title>Full Urban Traffic Simulator</title>
     <style>
         body { margin: 0; overflow: hidden; background: #050510; user-select: none; }
         #ui {
@@ -28,7 +28,7 @@
 <body>
 
     <div id="ui">
-        <h3>🏙️ INSTANT URBAN DRIVE</h3>
+        <h3>🏙️ FULL URBAN SIMULATOR</h3>
         <div class="dash" id="speedo">0 km/h</div>
         <div class="status" id="light-status">라이트 (L): OFF</div>
         <div class="status" id="left-status">좌측 깜빡이 (Q): OFF</div>
@@ -65,32 +65,37 @@
         renderer.shadowMap.enabled = true;
         document.body.appendChild(renderer.domElement);
 
-        // 조명
+        // 조명 설정
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         scene.add(ambientLight);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
         dirLight.position.set(50, 120, 50);
         dirLight.castShadow = true;
         scene.add(dirLight);
 
-        // 🛣️ 진짜 도시 도로망 및 환경 구축 (즉시 로딩)
+        // 🛣️ 도시 환경 (도로, 인도, 건물, 가로수, 횡단보도, 신호등) 생성
         const cityGroup = new THREE.Group();
 
+        // 1. 아스팔트 도로
         const roadMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 });
         const road = new THREE.Mesh(new THREE.PlaneGeometry(24, 20000), roadMat);
         road.rotation.x = -Math.PI / 2;
         road.receiveShadow = true;
         cityGroup.add(road);
 
+        // 2. 차선 및 중앙선, 횡단보도
         const yellowLineMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
         const whiteLineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        
         for(let i = -10000; i < 10000; i += 12) {
+            // 중앙선
             const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 6), yellowLineMat);
             centerLine.rotation.x = -Math.PI / 2;
             centerLine.position.set(0, 0.02, i);
             cityGroup.add(centerLine);
 
+            // 차선
             const lane1 = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 5), whiteLineMat);
             lane1.rotation.x = -Math.PI / 2;
             lane1.position.set(-6, 0.02, i);
@@ -100,92 +105,178 @@
             lane2.rotation.x = -Math.PI / 2;
             lane2.position.set(6, 0.02, i);
             cityGroup.add(lane2);
+
+            // 횡단보도 (일정 간격마다)
+            if (i % 300 === 0) {
+                for(let zOff = -2; zOff <= 2; zOff += 1) {
+                    const crossWalk = new THREE.Mesh(new THREE.PlaneGeometry(22, 0.6), whiteLineMat);
+                    crossWalk.rotation.x = -Math.PI / 2;
+                    crossWalk.position.set(0, 0.03, i + zOff);
+                    cityGroup.add(crossWalk);
+                }
+            }
         }
 
-        const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x3d3d3d, roughness: 0.8 });
-        const leftSidewalk = new THREE.Mesh(new THREE.BoxGeometry(7, 0.3, 20000), sidewalkMat);
-        leftSidewalk.position.set(-15.5, 0.15, 0);
+        // 3. 인도 (보도블록)
+        const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 });
+        const leftSidewalk = new THREE.Mesh(new THREE.BoxGeometry(8, 0.3, 20000), sidewalkMat);
+        leftSidewalk.position.set(-16, 0.15, 0);
         cityGroup.add(leftSidewalk);
 
-        const rightSidewalk = new THREE.Mesh(new THREE.BoxGeometry(7, 0.3, 20000), sidewalkMat);
-        rightSidewalk.position.set(15.5, 0.15, 0);
+        const rightSidewalk = new THREE.Mesh(new THREE.BoxGeometry(8, 0.3, 20000), sidewalkMat);
+        rightSidewalk.position.set(16, 0.15, 0);
         cityGroup.add(rightSidewalk);
 
-        const pedestrians = [];
         const aiCars = [];
+        const pedestrians = [];
 
-        for(let i = -8000; i < 8000; i += 70) {
+        // 4. 고층 빌딩, 가로수, 신호등, 사람 배치
+        const treeLeavesMat = new THREE.MeshStandardMaterial({ color: 0x1e5631, roughness: 0.7 });
+        const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.9 });
+
+        for(let i = -8000; i < 8000; i += 50) {
+            // 가로등
             const poleMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
             const leftPole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 10), poleMat);
-            leftPole.position.set(-18, 5, i);
+            leftPole.position.set(-19.5, 5, i);
             cityGroup.add(leftPole);
 
             const rightPole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 10), poleMat);
-            rightPole.position.set(18, 5, i);
+            rightPole.position.set(19.5, 5, i);
             cityGroup.add(rightPole);
 
-            const h1 = 60 + Math.abs(Math.sin(i * 0.1)) * 90;
-            const h2 = 60 + Math.abs(Math.cos(i * 0.1)) * 90;
-            const bMat = new THREE.MeshStandardMaterial({ color: 0x111622, roughness: 0.3 });
+            // 가로수 (나무)
+            if (i % 100 === 0) {
+                // 왼쪽 나무
+                const trunkL = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 3), treeTrunkMat);
+                trunkL.position.set(-16, 1.5, i + 25);
+                cityGroup.add(trunkL);
+                const leavesL = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), treeLeavesMat);
+                leavesL.position.set(-16, 3.5, i + 25);
+                cityGroup.add(leavesL);
+
+                // 오른쪽 나무
+                const trunkR = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 3), treeTrunkMat);
+                trunkR.position.set(16, 1.5, i + 25);
+                cityGroup.add(trunkR);
+                const leavesR = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 8), treeLeavesMat);
+                leavesR.position.set(16, 3.5, i + 25);
+                cityGroup.add(leavesR);
+            }
+
+            // 고층 빌딩 군집
+            const h1 = 50 + Math.abs(Math.sin(i * 0.1)) * 100;
+            const h2 = 50 + Math.abs(Math.cos(i * 0.1)) * 100;
+            const bMat = new THREE.MeshStandardMaterial({ color: 0x111622, roughness: 0.3, metalness: 0.2 });
             
-            const leftBldg = new THREE.Mesh(new THREE.BoxGeometry(35, h1, 40), bMat);
-            leftBldg.position.set(-37, h1 / 2, i);
+            const leftBldg = new THREE.Mesh(new THREE.BoxGeometry(38, h1, 45), bMat);
+            leftBldg.position.set(-40, h1 / 2, i);
             cityGroup.add(leftBldg);
 
-            const rightBldg = new THREE.Mesh(new THREE.BoxGeometry(35, h2, 40), bMat);
-            rightBldg.position.set(37, h2 / 2, i);
+            const rightBldg = new THREE.Mesh(new THREE.BoxGeometry(38, h2, 45), bMat);
+            rightBldg.position.set(40, h2 / 2, i);
             cityGroup.add(rightBldg);
 
-            if (i % 140 === 0) {
+            // 신호등 구조물
+            if (i % 300 === 0) {
+                const lightPole = new THREE.Mesh(new THREE.BoxGeometry(0.6, 7, 0.6), poleMat);
+                lightPole.position.set(12, 3.5, i);
+                cityGroup.add(lightPole);
+
+                const trafficLightBox = new THREE.Mesh(new THREE.BoxGeometry(1, 2.2, 0.8), poleMat);
+                trafficLightBox.position.set(12, 6.5, i);
+                cityGroup.add(trafficLightBox);
+
+                const redCircle = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 16), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+                redCircle.position.set(12, 7.1, i + 0.45);
+                cityGroup.add(redCircle);
+            }
+
+            // 보행자 (사람)
+            if (i % 120 === 0) {
                 const pGroup = new THREE.Group();
                 const pMat = new THREE.MeshStandardMaterial({ color: Math.random() > 0.5 ? 0x2255cc : 0xcc2244 });
+                
                 const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.9, 0.3), pMat);
                 torso.position.y = 0.9;
                 pGroup.add(torso);
+
                 const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffdbac }));
                 head.position.y = 1.5;
                 pGroup.add(head);
-                pGroup.position.set(-14.5, 0.3, i + Math.random() * 20);
+
+                pGroup.position.set(-15.5, 0.3, i + Math.random() * 30);
                 cityGroup.add(pGroup);
+                pedestrians.push(pGroup);
             }
 
-            if (i % 250 === 50) {
+            // 달리는 다른 AI 차량들
+            if (i % 200 === 50) {
                 const aiCarGeo = new THREE.BoxGeometry(1.9, 0.8, 4.2);
-                const aiCarMat = new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff, metalness: 0.5, roughness: 0.3 });
+                const aiCarMat = new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff, metalness: 0.6, roughness: 0.3 });
                 const aiCar = new THREE.Mesh(aiCarGeo, aiCarMat);
                 aiCar.position.set(i % 2 === 0 ? -6 : 6, 0.4, i);
                 cityGroup.add(aiCar);
-                aiCars.push({ mesh: aiCar, speed: (i % 2 === 0 ? 0.4 : -0.3) });
+                aiCars.push({ mesh: aiCar, speed: (i % 2 === 0 ? 0.45 : -0.35) });
             }
         }
         scene.add(cityGroup);
 
-        // 🚗 즉시 생성되는 고품질 플레이어 자동차 (로딩 대기 시간 0초)
+        // 🏎️ 스포츠카 플레이어 모델
         const car = new THREE.Group();
         
-        // 차체
-        const bodyMat = new THREE.MeshStandardMaterial({ color: 0xcc1111, metalness: 0.8, roughness: 0.2 });
-        const carBody = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.6, 4.4), bodyMat);
-        carBody.position.y = 0.5;
-        carBody.castShadow = true;
-        car.add(carBody);
+        const carMat = new THREE.MeshStandardMaterial({ color: 0x00d2ff, metalness: 0.85, roughness: 0.15 });
+        const bodyShape = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.5, 4.5), carMat);
+        bodyShape.position.y = 0.45;
+        bodyShape.castShadow = true;
+        car.add(bodyShape);
 
-        // 상부 캐빈 (유리창 부분)
-        const cabinMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.1 });
-        const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.5, 2.2), cabinMat);
-        cabin.position.set(0, 0.95, -0.2);
+        const cabinMat = new THREE.MeshStandardMaterial({ color: 0x111122, metalness: 0.9, roughness: 0.1 });
+        const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.45, 2.0), cabinMat);
+        cabin.position.set(0, 0.85, -0.2);
         cabin.castShadow = true;
         car.add(cabin);
 
-        // 바퀴 4개
-        const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.3, 24);
+        const hood = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.15, 1.2), carMat);
+        hood.position.set(0, 0.65, 1.3);
+        car.add(hood);
+
+        const wingPillarMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const pillarL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.3, 0.2), wingPillarMat);
+        pillarL.position.set(-0.7, 0.8, -1.9);
+        car.add(pillarL);
+        const pillarR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.3, 0.2), wingPillarMat);
+        pillarR.position.set(0.7, 0.8, -1.9);
+        car.add(pillarR);
+
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.4), carMat);
+        wing.position.set(0, 0.95, -1.9);
+        car.add(wing);
+
+        const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffaa });
+        const headLightL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.1), lightMat);
+        headLightL.position.set(-0.7, 0.45, 2.26);
+        car.add(headLightL);
+        const headLightR = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.1), lightMat);
+        headLightR.position.set(0.7, 0.45, 2.26);
+        car.add(headLightR);
+
+        const tailLightMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const tailLightL = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.1), tailLightMat);
+        tailLightL.position.set(-0.7, 0.5, -2.26);
+        car.add(tailLightL);
+        const tailLightR = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.1), tailLightMat);
+        tailLightR.position.set(0.7, 0.5, -2.26);
+        car.add(tailLightR);
+
+        const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.35, 24);
         wheelGeo.rotateZ(Math.PI / 2);
-        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8 });
         
         const wheels = [];
         const wheelPositions = [
-            [-1.0, 0.35, 1.3], [1.0, 0.35, 1.3],
-            [-1.0, 0.35, -1.3], [1.0, 0.35, -1.3]
+            [-1.0, 0.38, 1.35], [1.0, 0.38, 1.35],
+            [-1.0, 0.38, -1.35], [1.0, 0.38, -1.35]
         ];
         wheelPositions.forEach(pos => {
             const wheel = new THREE.Mesh(wheelGeo, wheelMat);
@@ -197,7 +288,7 @@
         car.position.set(0, 0, 0);
         scene.add(car);
 
-        // 🔊 오디오 및 사운드 시스템
+        // 🔊 오디오 시스템
         let audioCtx = null;
         let engineOsc = null;
         let engineGain = null;
@@ -238,8 +329,8 @@
         }
 
         let speed = 0;
-        let maxSpeed = 1.2;
-        let acceleration = 0.018;
+        let maxSpeed = 1.3;
+        let acceleration = 0.02;
         let deceleration = 0.012;
         let maxSteering = 0.045;
 
@@ -285,6 +376,7 @@
             if (isDown) {
                 if (key === 'L') {
                     isLightOn = !isLightOn;
+                    headLightL.material.color.set(isLightOn ? 0xffffff : 0xffffaa);
                     document.getElementById('light-status').innerText = `라이트 (L): ${isLightOn ? 'ON' : 'OFF'}`;
                 }
                 if (key === 'Q') {
@@ -328,13 +420,12 @@
             }
 
             car.translateZ(speed);
-
-            // 바퀴 굴러가는 회전 효과
             wheels.forEach(w => { w.rotation.x -= speed * 2; });
 
             const kmh = Math.round(Math.abs(speed) * 180);
             document.getElementById('speedo').innerText = `${kmh} km/h`;
 
+            // AI 차량 순환 이동
             aiCars.forEach(item => {
                 item.mesh.position.z += item.speed;
                 if (item.mesh.position.z > car.position.z + 500) item.mesh.position.z -= 1500;
@@ -351,6 +442,21 @@
             const currentBlinkState = Math.floor(blinkTimer * 3.5) % 2 === 0;
             if (currentBlinkState !== lastBlinkState && (hazardOn || leftBlinker || rightBlinker)) {
                 playTickSound();
+                lastBlinkState = currentBlinkState;
+            }
+
+            if (hazardOn || leftBlinker) {
+                headLightL.material.color.set(currentBlinkState ? 0xffaa00 : 0x332200);
+            }
+            if (hazardOn || rightBlinker) {
+                headLightR.material.color.set(currentBlinkState ? 0xffaa00 : 0x332200);
+            }
+            if (!hazardOn && !leftBlinker && !rightBlinker && !isLightOn) {
+                headLightL.material.color.set(0xffffaa);
+                headLightR.material.color.set(0xffffaa);
+            }
+
+            if (currentBlinkState !== lastBlinkState) {
                 lastBlinkState = currentBlinkState;
             }
 
