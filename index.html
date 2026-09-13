@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Korean Urban Traffic Simulator - Real Cars</title>
+    <title>Korean Urban Traffic & Lights Simulator</title>
     <style>
         body { margin: 0; overflow: hidden; background: #0b0b14; user-select: none; }
         #ui {
@@ -16,29 +16,30 @@
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.6);
             pointer-events: none;
-            width: 290px;
+            width: 300px;
             border: 1px solid rgba(0,255,200,0.3);
             z-index: 5;
         }
         h3 { margin: 0 0 12px 0; font-size: 18px; color: #00ffcc; border-bottom: 1px solid #444; padding-bottom: 6px; }
-        .dash { font-size: 30px; color: #00ffcc; text-align: right; margin-top: 10px; font-weight: bold; }
-        .status { font-size: 13px; color: #ccc; margin: 5px 0; }
-        .car-info { font-size: 12px; color: #00ffcc; margin-top: 5px; font-weight: bold; }
+        .dash { font-size: 32px; color: #00ffcc; text-align: right; margin-top: 10px; font-weight: bold; }
+        .status { font-size: 13px; color: #ccc; margin: 6px 0; font-weight: bold; }
+        .on { color: #00ffcc !important; text-shadow: 0 0 8px rgba(0,255,200,0.6); }
+        .blink-on { color: #ffaa00 !important; text-shadow: 0 0 8px rgba(255,170,0,0.8); }
     </style>
 </head>
 <body>
 
     <div id="ui">
-        <h3>🇰🇷 KOREAN URBAN DRIVE</h3>
+        <h3>🇰🇷 KOREAN URBAN & LIGHTS</h3>
         <div class="dash" id="speedo">0 km/h</div>
-        <div class="car-info" id="car-badge">차량: 제네시스 G80 스타일</div>
         <div class="status" id="light-status">라이트 (L): OFF</div>
         <div class="status" id="left-status">좌측 깜빡이 (Q): OFF</div>
         <div class="status" id="right-status">우측 깜빡이 (E): OFF</div>
         <div class="status" id="hazard-status">비상등 (H): OFF</div>
+        <div class="status" id="brake-status">브레이크 / 후진: OFF</div>
         <hr style="border:0; border-top:1px solid #444; margin:10px 0;">
-        <div style="font-size:11px; color:#aaa; line-height: 1.6;">
-            [↑ / ↓] 전진 및 후진 (엔진음)<br>
+        <div style="font-size:11px; color:#aaa; line-height: 1.6; font-weight: normal;">
+            [↑ / ↓] 전진 및 브레이크/후진<br>
             [← / →] 좌우 핸들 조작<br>
             [마우스 드래그] 주변 자유 시점<br>
             [C] 운전석 / 3인칭 시점 변경
@@ -67,7 +68,7 @@
         renderer.shadowMap.enabled = true;
         document.body.appendChild(renderer.domElement);
 
-        // 조명 설정
+        // 조명
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
         scene.add(ambientLight);
 
@@ -76,28 +77,24 @@
         dirLight.castShadow = true;
         scene.add(dirLight);
 
-        // 🛣️ 대한민국 스타일 도시 환경 구축
+        // 🛣️ 도시 환경 (도로, 상가 건물, 간판, 신호등)
         const cityGroup = new THREE.Group();
 
-        // 1. 왕복 4차선 아스팔트 도로
         const roadMat = new THREE.MeshStandardMaterial({ color: 0x18181f, roughness: 0.85 });
         const road = new THREE.Mesh(new THREE.PlaneGeometry(26, 30000), roadMat);
         road.rotation.x = -Math.PI / 2;
         road.receiveShadow = true;
         cityGroup.add(road);
 
-        // 2. 차선, 중앙선, 횡단보도
         const yellowLineMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
         const whiteLineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
         
         for(let i = -15000; i < 15000; i += 12) {
-            // 중앙선
             const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 6), yellowLineMat);
             centerLine.rotation.x = -Math.PI / 2;
             centerLine.position.set(0, 0.02, i);
             cityGroup.add(centerLine);
 
-            // 차선
             const lane1 = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 5), whiteLineMat);
             lane1.rotation.x = -Math.PI / 2;
             lane1.position.set(-6.5, 0.02, i);
@@ -108,7 +105,6 @@
             lane2.position.set(6.5, 0.02, i);
             cityGroup.add(lane2);
 
-            // 횡단보도 (한국식 흰색 블록 패턴)
             if (i % 350 === 0) {
                 for(let zOff = -2.5; zOff <= 2.5; zOff += 1) {
                     const crossWalk = new THREE.Mesh(new THREE.PlaneGeometry(24, 0.6), whiteLineMat);
@@ -119,7 +115,6 @@
             }
         }
 
-        // 3. 보도블록 (인도)
         const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x4a4a52, roughness: 0.9 });
         const leftSidewalk = new THREE.Mesh(new THREE.BoxGeometry(9, 0.35, 30000), sidewalkMat);
         leftSidewalk.position.set(-17.5, 0.175, 0);
@@ -130,71 +125,13 @@
         cityGroup.add(rightSidewalk);
 
         const aiCars = [];
-        const pedestrians = [];
 
-        // 🚗 현실적인 자동차 생성 함수 (현대, 기아, 제네시스, BMW, 벤츠 스타일)
-        function createRealCarMesh(type) {
-            const carGroup = new THREE.Group();
-            let bodyColor = 0x111111;
-            let width = 1.9, height = 0.7, length = 4.6;
-
-            if (type === 'GENESIS') bodyColor = 0x1c2833; // 제네시스 네이비/블랙 느낌
-            else if (type === 'BMW') bodyColor = 0x2471a3; // BMW 블루 느낌
-            else if (type === 'BENZ') bodyColor = 0xbdc3c7; // 벤츠 실버 느낌
-            else if (type === 'KIA') bodyColor = 0xc0392b; // 기아 레드 느낌
-            else if (type === 'HYUNDAI') bodyColor = 0xf8f9f9; // 현대 화이트 느낌
-
-            // 메인 차체
-            const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, metalness: 0.85, roughness: 0.2 });
-            const body = new THREE.Mesh(new THREE.BoxGeometry(width, height, length), bodyMat);
-            body.position.y = 0.45;
-            body.castShadow = true;
-            carGroup.add(body);
-
-            // 캐빈 (유리창 부위)
-            const cabinMat = new THREE.MeshStandardMaterial({ color: 0x111115, metalness: 0.9, roughness: 0.1 });
-            const cabin = new THREE.Mesh(new THREE.BoxGeometry(width * 0.82, 0.5, length * 0.48), cabinMat);
-            cabin.position.set(0, 0.92, -0.15);
-            cabin.castShadow = true;
-            carGroup.add(cabin);
-
-            // 헤드라이트 & 그릴 디테일
-            const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-            const hlL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.1), lightMat);
-            hlL.position.set(-width*0.35, 0.48, length*0.505);
-            carGroup.add(hlL);
-            const hlR = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.1), lightMat);
-            hlR.position.set(width*0.35, 0.48, length*0.505);
-            carGroup.add(hlR);
-
-            // 바퀴 4개
-            const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.35, 24);
-            wheelGeo.rotateZ(Math.PI / 2);
-            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8 });
-            
-            const wheels = [];
-            const wPos = [
-                [-width*0.5, 0.38, length*0.32], [width*0.5, 0.38, length*0.32],
-                [-width*0.5, 0.38, -length*0.32], [width*0.5, 0.38, -length*0.32]
-            ];
-            wPos.forEach(p => {
-                const w = new THREE.Mesh(wheelGeo, wheelMat);
-                w.position.set(...p);
-                carGroup.add(w);
-                wheels.push(w);
-            });
-
-            return { group: carGroup, wheels: wheels, headLightL: hlL, headLightR: hlR };
-        }
-
-        // 4. 건물, 가로수, 신호등, AI 차량 대거 배치
+        // 건물 및 한국식 상가 간판 배치
         const treeLeavesMat = new THREE.MeshStandardMaterial({ color: 0x1e5631, roughness: 0.7 });
         const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.9 });
-        const brands = ['GENESIS', 'BMW', 'BENZ', 'KIA', 'HYUNDAI'];
+        const poleMat = new THREE.MeshStandardMaterial({ color: 0x222225 });
 
         for(let i = -10000; i < 10000; i += 60) {
-            // 가로등
-            const poleMat = new THREE.MeshStandardMaterial({ color: 0x222225 });
             const leftPole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 10), poleMat);
             leftPole.position.set(-21, 5, i);
             cityGroup.add(leftPole);
@@ -203,37 +140,32 @@
             rightPole.position.set(21, 5, i);
             cityGroup.add(rightPole);
 
-            // 대한민국 신호등 구조물 (도로 위 가로지르는 철제 폴대 + 신호등)
+            // 신호등 구조물
             if (i % 350 === 0) {
-                // 수직 기둥
                 const sp1 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 7.5, 0.5), poleMat);
                 sp1.position.set(13, 3.75, i);
                 cityGroup.add(sp1);
-                // 도로 위 가로 지르는 팔
                 const sp2 = new THREE.Mesh(new THREE.BoxGeometry(26, 0.4, 0.4), poleMat);
                 sp2.position.set(0, 7.3, i);
                 cityGroup.add(sp2);
 
-                // 신호등 박스들
                 for(let lx of [-6.5, 6.5]) {
                     const box = new THREE.Mesh(new THREE.BoxGeometry(0.9, 2.2, 0.7), poleMat);
                     box.position.set(lx, 6.1, i);
                     cityGroup.add(box);
 
-                    // 적색등
                     const red = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
                     red.position.set(lx, 6.6, i + 0.38);
                     cityGroup.add(red);
-                    // 녹색등
                     const green = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
                     green.position.set(lx, 5.6, i + 0.38);
                     cityGroup.add(green);
                 }
             }
 
-            // 한국식 상가 및 고층 건물 (1층 상가 알록달록 간판 느낌 포함)
-            const h1 = 40 + Math.abs(Math.sin(i * 0.12)) * 90;
-            const h2 = 40 + Math.abs(Math.cos(i * 0.12)) * 90;
+            // 고층 빌딩
+            const h1 = 45 + Math.abs(Math.sin(i * 0.12)) * 90;
+            const h2 = 45 + Math.abs(Math.cos(i * 0.12)) * 90;
             const bMat1 = new THREE.MeshStandardMaterial({ color: 0x1f2430, roughness: 0.3 });
             const bMat2 = new THREE.MeshStandardMaterial({ color: 0x273746, roughness: 0.3 });
 
@@ -245,12 +177,17 @@
             rightBldg.position.set(42, h2 / 2, i);
             cityGroup.add(rightBldg);
 
-            // 1층 상가 간판 효과 (알록달록한 박스들)
+            // 1층 알록달록 상가 간판
             const signColors = [0xe74c3c, 0x3498db, 0xf1c40f, 0x2ecc71, 0x9b59b6];
             const signMat = new THREE.MeshBasicMaterial({ color: signColors[Math.abs(i) % signColors.length] });
-            const sign = new THREE.Mesh(new THREE.BoxGeometry(15, 1.2, 0.5), signMat);
-            sign.position.set(-22, 3, i + 10);
+            const sign = new THREE.Mesh(new THREE.BoxGeometry(16, 1.4, 0.5), signMat);
+            sign.position.set(-22, 3.2, i + 10);
             cityGroup.add(sign);
+
+            const signMat2 = new THREE.MeshBasicMaterial({ color: signColors[(Math.abs(i) + 2) % signColors.length] });
+            const sign2 = new THREE.Mesh(new THREE.BoxGeometry(16, 1.4, 0.5), signMat2);
+            sign2.position.set(22, 3.2, i + 15);
+            cityGroup.add(sign2);
 
             // 가로수
             if (i % 120 === 0) {
@@ -261,29 +198,77 @@
                 leavesL.position.set(-17.5, 3.8, i + 30);
                 cityGroup.add(leavesL);
             }
-
-            // AI 주행 차량 배치 (현대, 기아, 제네시스, BMW, 벤츠 모델 혼합)
-            if (i % 220 === 40) {
-                const brand = brands[Math.floor(Math.abs(i) * 0.1) % brands.length];
-                const aiCarData = createRealCarMesh(brand);
-                const laneX = (i % 2 === 0) ? -6.5 : 6.5;
-                aiCarData.group.position.set(laneX, 0, i);
-                scene.add(aiCarData.group);
-                aiCars.push({ 
-                    data: aiCarData, 
-                    speed: (i % 2 === 0 ? 0.5 : -0.45) 
-                });
-            }
         }
         scene.add(cityGroup);
 
-        // 🏎️ 내 플레이어 자동차 생성 (기본: 제네시스 G80 스타일)
-        const playerCarData = createRealCarMesh('GENESIS');
-        const playerCar = playerCarData.group;
-        playerCar.position.set(0, 0, 0);
-        scene.add(playerCar);
+        // 🚗 플레이어 자동차 및 깜빡이/브레이크 램프 구조 생성
+        const carGroup = new THREE.Group();
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1c2833, metalness: 0.85, roughness: 0.2 }); // 제네시스 스타일 네이비
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.7, 4.6), bodyMat);
+        body.position.y = 0.45;
+        body.castShadow = true;
+        carGroup.add(body);
 
-        // 🔊 오디오 및 사운드 시스템
+        const cabinMat = new THREE.MeshStandardMaterial({ color: 0x111115, metalness: 0.9, roughness: 0.1 });
+        const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.5, 2.2), cabinMat);
+        cabin.position.set(0, 0.92, -0.15);
+        carGroup.add(cabin);
+
+        // 💡 전면 헤드라이트
+        const headLightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const headLightL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.1), headLightMat);
+        headLightL.position.set(-0.7, 0.48, 2.31);
+        carGroup.add(headLightL);
+        const headLightR = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.1), headLightMat);
+        headLightR.position.set(0.7, 0.48, 2.31);
+        carGroup.add(headLightR);
+
+        // 💡 전면 좌/우 깜빡이 램프 (주황색)
+        const frontBlinkerMatL = new THREE.MeshBasicMaterial({ color: 0x332200 });
+        const frontBlinkerMatR = new THREE.MeshBasicMaterial({ color: 0x332200 });
+        const frontBlinkerL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.1), frontBlinkerMatL);
+        frontBlinkerL.position.set(-0.95, 0.48, 2.31);
+        carGroup.add(frontBlinkerL);
+        const frontBlinkerR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.1), frontBlinkerMatR);
+        frontBlinkerR.position.set(0.95, 0.48, 2.31);
+        carGroup.add(frontBlinkerR);
+
+        // 💡 후면 브레이크 / 테일램프 / 후진등
+        const tailLightMat = new THREE.MeshBasicMaterial({ color: 0x550000 });
+        const tailLightL = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.15, 0.1), tailLightMat);
+        tailLightL.position.set(-0.7, 0.5, -2.31);
+        carGroup.add(tailLightL);
+        const tailLightR = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.15, 0.1), tailLightMat);
+        tailLightR.position.set(0.7, 0.5, -2.31);
+        carGroup.add(tailLightR);
+
+        // 💡 후면 좌/우 깜빡이 램프 (주황색)
+        const rearBlinkerMatL = new THREE.MeshBasicMaterial({ color: 0x332200 });
+        const rearBlinkerMatR = new THREE.MeshBasicMaterial({ color: 0x332200 });
+        const rearBlinkerL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.15, 0.1), rearBlinkerMatL);
+        rearBlinkerL.position.set(-0.25, 0.5, -2.31);
+        carGroup.add(rearBlinkerL);
+        const rearBlinkerR = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.15, 0.1), rearBlinkerMatR);
+        rearBlinkerR.position.set(0.25, 0.5, -2.31);
+        carGroup.add(rearBlinkerR);
+
+        // 바퀴
+        const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.35, 24);
+        wheelGeo.rotateZ(Math.PI / 2);
+        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8 });
+        const wheels = [];
+        const wPos = [[-0.95, 0.38, 1.4], [0.95, 0.38, 1.4], [-0.95, 0.38, -1.4], [0.95, 0.38, -1.4]];
+        wPos.forEach(p => {
+            const w = new THREE.Mesh(wheelGeo, wheelMat);
+            w.position.set(...p);
+            carGroup.add(w);
+            wheels.push(w);
+        });
+
+        carGroup.position.set(0, 0, 0);
+        scene.add(carGroup);
+
+        // 🔊 오디오 시스템
         let audioCtx = null;
         let engineOsc = null;
         let engineGain = null;
@@ -291,7 +276,6 @@
         function initAudio() {
             if (audioCtx) return;
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            
             engineOsc = audioCtx.createOscillator();
             engineOsc.type = 'sawtooth';
             engineOsc.frequency.setValueAtTime(35, audioCtx.currentTime);
@@ -315,7 +299,7 @@
             const gain = audioCtx.createGain();
             osc.type = 'sine';
             osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
             osc.connect(gain);
             gain.connect(audioCtx.destination);
@@ -349,7 +333,6 @@
             const deltaY = e.clientY - mouseY;
             mouseX = e.clientX;
             mouseY = e.clientY;
-
             cameraAngleY -= deltaX * 0.005;
             cameraAngleX = Math.max(0.05, Math.min(1.2, cameraAngleX - deltaY * 0.005));
         });
@@ -361,7 +344,6 @@
 
         function handleKey(e, isDown) {
             initAudio();
-            
             if (e.key === 'ArrowUp') keys.up = isDown;
             if (e.key === 'ArrowDown') keys.down = isDown;
             if (e.key === 'ArrowLeft') keys.left = isDown;
@@ -371,24 +353,29 @@
             if (isDown) {
                 if (key === 'L') {
                     isLightOn = !isLightOn;
-                    playerCarData.headLightL.material.color.set(isLightOn ? 0xffffff : 0xffffff);
                     document.getElementById('light-status').innerText = `라이트 (L): ${isLightOn ? 'ON' : 'OFF'}`;
+                    document.getElementById('light-status').className = `status ${isLightOn ? 'on' : ''}`;
                 }
                 if (key === 'Q') {
                     leftBlinker = !leftBlinker;
                     if (leftBlinker) rightBlinker = false;
                     document.getElementById('left-status').innerText = `좌측 깜빡이 (Q): ${leftBlinker ? 'ON' : 'OFF'}`;
-                    document.getElementById('right-status').innerText = `우측 깜빡이 (E): ${rightBlinker ? 'ON' : 'OFF'}`;
+                    document.getElementById('left-status').className = `status ${leftBlinker ? 'blink-on' : ''}`;
+                    document.getElementById('right-status').innerText = `우측 깜빡이 (E): OFF`;
+                    document.getElementById('right-status').className = `status`;
                 }
                 if (key === 'E') {
                     rightBlinker = !rightBlinker;
                     if (rightBlinker) leftBlinker = false;
                     document.getElementById('right-status').innerText = `우측 깜빡이 (E): ${rightBlinker ? 'ON' : 'OFF'}`;
-                    document.getElementById('left-status').innerText = `좌측 깜빡이 (Q): ${leftBlinker ? 'ON' : 'OFF'}`;
+                    document.getElementById('right-status').className = `status ${rightBlinker ? 'blink-on' : ''}`;
+                    document.getElementById('left-status').innerText = `좌측 깜빡이 (Q): OFF`;
+                    document.getElementById('left-status').className = `status`;
                 }
                 if (key === 'H') {
                     hazardOn = !hazardOn;
                     document.getElementById('hazard-status').innerText = `비상등 (H): ${hazardOn ? 'ON' : 'OFF'}`;
+                    document.getElementById('hazard-status').className = `status ${hazardOn ? 'blink-on' : ''}`;
                 }
                 if (key === 'C') {
                     isFirstPerson = !isFirstPerson;
@@ -410,35 +397,41 @@
             }
 
             if (Math.abs(speed) > 0.01) {
-                if (keys.left) playerCar.rotation.y += maxSteering * (speed / maxSpeed);
-                if (keys.right) playerCar.rotation.y -= maxSteering * (speed / maxSpeed);
+                if (keys.left) carGroup.rotation.y += maxSteering * (speed / maxSpeed);
+                if (keys.right) carGroup.rotation.y -= maxSteering * (speed / maxSpeed);
             }
 
-            playerCar.translateZ(speed);
-            playerCarData.wheels.forEach(w => { w.rotation.x -= speed * 2; });
+            carGroup.translateZ(speed);
+            wheels.forEach(w => { w.rotation.x -= speed * 2; });
 
             const kmh = Math.round(Math.abs(speed) * 180);
             document.getElementById('speedo').innerText = `${kmh} km/h`;
 
-            // AI 차량 이동 및 순환
-            aiCars.forEach(item => {
-                item.data.group.position.z += item.speed;
-                item.data.wheels.forEach(w => { w.rotation.x -= item.speed * 2; });
-
-                if (item.data.group.position.z > playerCar.position.z + 500) {
-                    item.data.group.position.z -= 1500;
-                }
-                if (item.data.group.position.z < playerCar.position.z - 500) {
-                    item.data.group.position.z += 1500;
-                }
-            });
-
-            if (engineGain && audioCtx) {
-                const engineVol = Math.min(0.25, Math.abs(speed) * 0.2);
-                engineGain.gain.setTargetAtTime(engineVol, audioCtx.currentTime, 0.1);
-                engineOsc.frequency.setTargetAtTime(35 + Math.abs(speed) * 90, audioCtx.currentTime, 0.1);
+            // 💡 브레이크 및 후진등 상태 제어
+            const isBraking = keys.down || (speed > 0 && keys.down);
+            const isReversing = speed < 0;
+            if (isReversing) {
+                tailLightMat.color.set(0xffffff); // 후진 시 하얀색 등
+                document.getElementById('brake-status').innerText = `브레이크 / 후진: 후진중 (REVERSE)`;
+                document.getElementById('brake-status').className = `status on`;
+            } else if (isBraking) {
+                tailLightMat.color.set(0xff0000); // 브레이크 시 강한 빨간색
+                document.getElementById('brake-status').innerText = `브레이크 / 후진: 제동중 (BRAKE)`;
+                document.getElementById('brake-status').className = `status on`;
+            } else {
+                tailLightMat.color.set(0x550000); // 기본 약한 빨간색
+                document.getElementById('brake-status').innerText = `브레이크 / 후진: OFF`;
+                document.getElementById('brake-status').className = `status`;
             }
 
+            // 💡 헤드라이트 제어
+            if (isLightOn) {
+                headLightMat.color.set(0xffffff);
+            } else {
+                headLightMat.color.set(0x555555);
+            }
+
+            // 💡 깜빡이 및 비상등 타이머 및 점멸 제어
             blinkTimer += 0.016;
             const currentBlinkState = Math.floor(blinkTimer * 3.5) % 2 === 0;
             if (currentBlinkState !== lastBlinkState && (hazardOn || leftBlinker || rightBlinker)) {
@@ -446,44 +439,49 @@
                 lastBlinkState = currentBlinkState;
             }
 
-            if (hazardOn || leftBlinker) {
-                playerCarData.headLightL.material.color.set(currentBlinkState ? 0xffaa00 : 0xffffff);
-            }
-            if (hazardOn || rightBlinker) {
-                playerCarData.headLightR.material.color.set(currentBlinkState ? 0xffaa00 : 0xffffff);
-            }
-            if (!hazardOn && !leftBlinker && !rightBlinker) {
-                playerCarData.headLightL.material.color.set(0xffffff);
-                playerCarData.headLightR.material.color.set(0xffffff);
-            }
+            // 좌우 깜빡이 램프 색상 적용
+            const showLeft = hazardOn || leftBlinker;
+            const showRight = hazardOn || rightBlinker;
+
+            frontBlinkerMatL.color.set(showLeft && currentBlinkState ? 0xffaa00 : 0x332200);
+            rearBlinkerMatL.color.set(showLeft && currentBlinkState ? 0xffaa00 : 0x332200);
+
+            frontBlinkerMatR.color.set(showRight && currentBlinkState ? 0xffaa00 : 0x332200);
+            rearBlinkerMatR.color.set(showRight && currentBlinkState ? 0xffaa00 : 0x332200);
 
             if (currentBlinkState !== lastBlinkState) {
                 lastBlinkState = currentBlinkState;
             }
 
+            if (engineGain && audioCtx) {
+                const engineVol = Math.min(0.25, Math.abs(speed) * 0.2);
+                engineGain.gain.setTargetAtTime(engineVol, audioCtx.currentTime, 0.1);
+                engineOsc.frequency.setTargetAtTime(35 + Math.abs(speed) * 90, audioCtx.currentTime, 0.1);
+            }
+
             // 카메라 시점 제어
             if (isFirstPerson) {
                 camera.position.set(
-                    playerCar.position.x - Math.sin(playerCar.rotation.y) * 0.2,
-                    playerCar.position.y + 0.9,
-                    playerCar.position.z - Math.cos(playerCar.rotation.y) * 0.2
+                    carGroup.position.x - Math.sin(carGroup.rotation.y) * 0.2,
+                    carGroup.position.y + 0.9,
+                    carGroup.position.z - Math.cos(carGroup.rotation.y) * 0.2
                 );
                 const lookTarget = new THREE.Vector3(
-                    playerCar.position.x - Math.sin(playerCar.rotation.y + cameraAngleY) * 20,
-                    playerCar.position.y + 0.9 + (cameraAngleX - 0.3) * 10,
-                    playerCar.position.z - Math.cos(playerCar.rotation.y + cameraAngleY) * 20
+                    carGroup.position.x - Math.sin(carGroup.rotation.y + cameraAngleY) * 20,
+                    carGroup.position.y + 0.9 + (cameraAngleX - 0.3) * 10,
+                    carGroup.position.z - Math.cos(carGroup.rotation.y + cameraAngleY) * 20
                 );
                 camera.lookAt(lookTarget);
             } else {
                 const dist = 7.5;
-                const camX = playerCar.position.x - Math.sin(playerCar.rotation.y + cameraAngleY) * dist;
-                const camZ = playerCar.position.z - Math.cos(playerCar.rotation.y + cameraAngleY) * dist;
+                const camX = carGroup.position.x - Math.sin(carGroup.rotation.y + cameraAngleY) * dist;
+                const camZ = carGroup.position.z - Math.cos(carGroup.rotation.y + cameraAngleY) * dist;
                 
                 camera.position.x += (camX - camera.position.x) * 0.15;
                 camera.position.z += (camZ - camera.position.z) * 0.15;
-                camera.position.y = playerCar.position.y + 1.6 + (cameraAngleX * 3);
+                camera.position.y = carGroup.position.y + 1.6 + (cameraAngleX * 3);
                 
-                camera.lookAt(playerCar.position.x, playerCar.position.y + 0.5, playerCar.position.z);
+                camera.lookAt(carGroup.position.x, carGroup.position.y + 0.5, carGroup.position.z);
             }
 
             renderer.render(scene, camera);
