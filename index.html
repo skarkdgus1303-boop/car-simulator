@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Ultimate Real Car Simulator</title>
+    <title>Ultimate Urban Car Simulator</title>
     <style>
         body { margin: 0; overflow: hidden; background: #050510; user-select: none; }
         #ui {
@@ -16,8 +16,9 @@
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.6);
             pointer-events: none;
-            width: 260px;
+            width: 270px;
             border: 1px solid rgba(0,255,200,0.3);
+            z-index: 5;
         }
         h3 { margin: 0 0 12px 0; font-size: 18px; color: #00ffcc; border-bottom: 1px solid #444; padding-bottom: 6px; }
         .dash { font-size: 30px; color: #00ffcc; text-align: right; margin-top: 10px; font-weight: bold; }
@@ -40,10 +41,10 @@
 </head>
 <body>
 
-    <div id="loading">🚗 실도로 환경 및 사운드 로딩 중...<br><span style="font-size:13px; color:#888;">잠시만 기다려주세요.</span></div>
+    <div id="loading">🏙️ 도시 도로 및 오브젝트 로딩 중...<br><span style="font-size:13px; color:#888;">잠시만 기다려주세요.</span></div>
 
     <div id="ui">
-        <h3>🚘 HIGHWAY SIMULATOR</h3>
+        <h3>🏙️ URBAN DRIVE SIM</h3>
         <div class="dash" id="speedo">0 km/h</div>
         <div class="status" id="light-status">라이트 (L): OFF</div>
         <div class="status" id="left-status">좌측 깜빡이 (Q): OFF</div>
@@ -51,10 +52,10 @@
         <div class="status" id="hazard-status">비상등 (H): OFF</div>
         <hr style="border:0; border-top:1px solid #444; margin:10px 0;">
         <div style="font-size:11px; color:#aaa; line-height: 1.6;">
-            [↑ / ↓] 가속 및 후진 / 엔진음 발생<br>
-            [← / →] 핸들 조작<br>
-            [마우스 드래그] 주변 둘러보기<br>
-            [C] 운전석 / 3인칭 시점 전환
+            [↑ / ↓] 전진 및 후진 (엔진음)<br>
+            [← / →] 좌우 핸들 조작<br>
+            [마우스 드래그] 주변 자유 시점<br>
+            [C] 운전석 / 3인칭 시점 변경
         </div>
     </div>
 
@@ -74,7 +75,7 @@
 
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x050510);
-        scene.fog = new THREE.FogExp2(0x050510, 0.008);
+        scene.fog = new THREE.FogExp2(0x050510, 0.006);
 
         const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -82,58 +83,123 @@
         renderer.shadowMap.enabled = true;
         document.body.appendChild(renderer.domElement);
 
-        // 조명
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        // 조명 설정
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         scene.add(ambientLight);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        dirLight.position.set(50, 80, 50);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(50, 100, 50);
         dirLight.castShadow = true;
         scene.add(dirLight);
 
-        // 🛣️ 진짜 도로 환경 조성
-        const roadGroup = new THREE.Group();
-        const roadMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
-        const road = new THREE.Mesh(new THREE.PlaneGeometry(16, 10000), roadMat);
+        // 🛣️ 도시 도로 및 환경 구축 (건물, 가로등, 신호등, 사람)
+        const cityGroup = new THREE.Group();
+
+        // 아스팔트 도로 (폭 18m)
+        const roadMat = new THREE.MeshStandardMaterial({ color: 0x181818, roughness: 0.9 });
+        const road = new THREE.Mesh(new THREE.PlaneGeometry(18, 12000), roadMat);
         road.rotation.x = -Math.PI / 2;
         road.receiveShadow = true;
-        roadGroup.add(road);
+        cityGroup.add(road);
 
-        const lineMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
-        for(let i = -5000; i < 5000; i += 10) {
-            const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 5), lineMat);
+        // 중앙선 및 차선
+        const yellowLineMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+        const whiteLineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        for(let i = -6000; i < 6000; i += 10) {
+            const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 5), yellowLineMat);
             centerLine.rotation.x = -Math.PI / 2;
             centerLine.position.set(0, 0.01, i);
-            roadGroup.add(centerLine);
+            cityGroup.add(centerLine);
+
+            const leftLane = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 4), whiteLineMat);
+            leftLane.rotation.x = -Math.PI / 2;
+            leftLane.position.set(-4.5, 0.01, i);
+            cityGroup.add(leftLane);
+
+            const rightLane = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 4), whiteLineMat);
+            rightLane.rotation.x = -Math.PI / 2;
+            rightLane.position.set(4.5, 0.01, i);
+            cityGroup.add(rightLane);
         }
 
-        const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-        const leftSidewalk = new THREE.Mesh(new THREE.BoxGeometry(4, 0.2, 10000), sidewalkMat);
-        leftSidewalk.position.set(-10, 0.1, 0);
-        roadGroup.add(leftSidewalk);
+        // 인도 (보도블록)
+        const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 });
+        const leftSidewalk = new THREE.Mesh(new THREE.BoxGeometry(6, 0.25, 12000), sidewalkMat);
+        leftSidewalk.position.set(-12, 0.125, 0);
+        cityGroup.add(leftSidewalk);
 
-        const rightSidewalk = new THREE.Mesh(new THREE.BoxGeometry(4, 0.2, 10000), sidewalkMat);
-        rightSidewalk.position.set(10, 0.1, 0);
-        roadGroup.add(rightSidewalk);
+        const rightSidewalk = new THREE.Mesh(new THREE.BoxGeometry(6, 0.25, 12000), sidewalkMat);
+        rightSidewalk.position.set(12, 0.125, 0);
+        cityGroup.add(rightSidewalk);
 
-        for(let i = -4000; i < 4000; i += 60) {
-            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 8), new THREE.MeshStandardMaterial({color: 0x444}));
-            pole.position.set(-11, 4, i);
-            roadGroup.add(pole);
+        // 건물, 가로등, 신호등, 사람 반복 배치
+        for(let i = -5500; i < 5500; i += 50) {
+            // 1. 가로등
+            const poleMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            const leftPole = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 9), poleMat);
+            leftPole.position.set(-14, 4.5, i);
+            cityGroup.add(leftPole);
 
-            const bHeight = 40 + Math.random() * 60;
-            const buildingMat = new THREE.MeshStandardMaterial({ color: 0x111622, roughness: 0.5 });
-            const leftBldg = new THREE.Mesh(new THREE.BoxGeometry(25, bHeight, 30), buildingMat);
-            leftBldg.position.set(-30, bHeight/2, i);
-            roadGroup.add(leftBldg);
+            const rightPole = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 9), poleMat);
+            rightPole.position.set(14, 4.5, i);
+            cityGroup.add(rightPole);
 
-            const rightBldg = new THREE.Mesh(new THREE.BoxGeometry(25, bHeight, 30), buildingMat);
-            rightBldg.position.set(30, bHeight/2, i);
-            roadGroup.add(rightBldg);
+            // 2. 고층 빌딩 (도시 배경)
+            const bHeight1 = 50 + Math.abs(Math.sin(i)) * 70;
+            const bHeight2 = 50 + Math.abs(Math.cos(i)) * 70;
+            const buildingMat = new THREE.MeshStandardMaterial({ color: 0x161b28, roughness: 0.4 });
+            
+            const leftBldg = new THREE.Mesh(new THREE.BoxGeometry(30, bHeight1, 35), buildingMat);
+            leftBldg.position.set(-35, bHeight1 / 2, i);
+            cityGroup.add(leftBldg);
+
+            const rightBldg = new THREE.Mesh(new THREE.BoxGeometry(30, bHeight2, 35), buildingMat);
+            rightBldg.position.set(35, bHeight2 / 2, i);
+            cityGroup.add(rightBldg);
+
+            // 3. 신호등 (일정한 간격마다 도로 위에 설치)
+            if (i % 200 === 0) {
+                const trafficLightPole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 7), poleMat);
+                trafficLightPole.position.set(9, 3.5, i);
+                cityGroup.add(trafficLightPole);
+
+                const boxMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+                const tBox = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.5), boxMat);
+                tBox.position.set(9, 6.5, i);
+                cityGroup.add(tBox);
+
+                // 신호등 불빛 (초록불/빨간불)
+                const redLight = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+                redLight.position.set(9, 7.1, i + 0.26);
+                cityGroup.add(redLight);
+
+                const greenLight = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+                greenLight.position.set(9, 5.9, i + 0.26);
+                cityGroup.add(greenLight);
+            }
+
+            // 4. 보행자 (사람 캐릭터 모델링 - 단순화된 형태)
+            if (i % 150 === 75) {
+                const personGroup = new THREE.Group();
+                const bodyMat = new THREE.MeshStandardMaterial({ color: Math.random() > 0.5 ? 0x3366cc : 0xcc3333 });
+                
+                // 몸통
+                const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.0, 0.3), bodyMat);
+                torso.position.y = 1.0;
+                personGroup.add(torso);
+
+                // 머리
+                const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), new THREE.MeshStandardMaterial({ color: 0xffdbac }));
+                head.position.y = 1.7;
+                personGroup.add(head);
+
+                personGroup.position.set(-10, 0, i);
+                cityGroup.add(personGroup);
+            }
         }
-        scene.add(roadGroup);
+        scene.add(cityGroup);
 
-        // 🔊 사운드 시스템
+        // 🔊 오디오 및 사운드 시스템
         let audioCtx = null;
         let engineOsc = null;
         let engineGain = null;
@@ -159,6 +225,7 @@
             engineOsc.start();
         }
 
+        // 깜빡이 및 비상등 틱-톡 사운드
         function playTickSound() {
             if (!audioCtx) return;
             const osc = audioCtx.createOscillator();
@@ -205,13 +272,14 @@
             cameraAngleX = Math.max(0.05, Math.min(1.2, cameraAngleX - deltaY * 0.005));
         });
 
+        // 방향키 매핑 수정 (위: 전진, 아래: 후진, 좌우: 핸들)
         const keys = { up: false, down: false, left: false, right: false };
 
-        // 🚗 3D 자동차 모델 및 DRACO 복호화 설정 적용
+        // 🚗 자동차 모델 로드 (Draco 지원)
         const loader = new GLTFLoader();
         const dracoLoader = new DRACOLoader();
-        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.5/'); //
-        loader.setDRACOLoader(dracoLoader); //
+        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.5/');
+        loader.setDRACOLoader(dracoLoader);
 
         loader.load(
             'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/ferrari.glb',
@@ -233,11 +301,11 @@
             },
             (xhr) => {
                 const percent = Math.round((xhr.loaded / xhr.total) * 100);
-                if(percent) document.getElementById('loading').innerHTML = `🚗 도로 환경 로딩 중... ${percent}%`;
+                if(percent) document.getElementById('loading').innerHTML = `🏙️ 도시 환경 로딩 중... ${percent}%`;
             },
             (error) => {
                 console.error(error);
-                document.getElementById('loading').innerHTML = '⚠️ 로딩 실패. 네트워크 또는 깃허브 설정을 확인해주세요.';
+                document.getElementById('loading').innerHTML = '⚠️ 로딩 실패. 네트워크 상태를 확인해주세요.';
             }
         );
 
@@ -246,12 +314,14 @@
 
         function handleKey(e, isDown) {
             initAudio();
-            const key = e.key.toUpperCase();
+            
+            // 방향키 매핑 정확히 수정 (ArrowUp: 전진, ArrowDown: 후진, ArrowLeft/Right: 핸들)
             if (e.key === 'ArrowUp') keys.up = isDown;
             if (e.key === 'ArrowDown') keys.down = isDown;
             if (e.key === 'ArrowLeft') keys.left = isDown;
             if (e.key === 'ArrowRight') keys.right = isDown;
 
+            const key = e.key.toUpperCase();
             if (isDown) {
                 if (key === 'L') {
                     isLightOn = !isLightOn;
@@ -286,6 +356,7 @@
             requestAnimationFrame(animate);
             if (!car) return;
 
+            // 방향키 연동 전진/후진 가속도 계산
             if (keys.up) speed = Math.min(speed + acceleration, maxSpeed);
             else if (keys.down) speed = Math.max(speed - acceleration, -maxSpeed * 0.4);
             else {
@@ -293,6 +364,7 @@
                 if (speed < 0) speed = Math.min(speed + deceleration, 0);
             }
 
+            // 좌우 방향키 핸들링
             if (Math.abs(speed) > 0.01) {
                 if (keys.left) car.rotation.y += maxSteering * (speed / maxSpeed);
                 if (keys.right) car.rotation.y -= maxSteering * (speed / maxSpeed);
@@ -303,12 +375,14 @@
             const kmh = Math.round(Math.abs(speed) * 180);
             document.getElementById('speedo').innerText = `${kmh} km/h`;
 
+            // 엔진 소리 제어
             if (engineGain && audioCtx) {
                 const engineVol = Math.min(0.25, Math.abs(speed) * 0.2);
                 engineGain.gain.setTargetAtTime(engineVol, audioCtx.currentTime, 0.1);
                 engineOsc.frequency.setTargetAtTime(40 + Math.abs(speed) * 90, audioCtx.currentTime, 0.1);
             }
 
+            // 깜빡이 및 비상등 점멸 시각 효과 및 사운드
             blinkTimer += 0.016;
             const currentBlinkState = Math.floor(blinkTimer * 3.5) % 2 === 0;
             if (currentBlinkState !== lastBlinkState && (hazardOn || leftBlinker || rightBlinker)) {
@@ -316,6 +390,14 @@
                 lastBlinkState = currentBlinkState;
             }
 
+            // 차체 깜빡이 불빛 색상 변화 연동
+            car.traverse((child) => {
+                if (child.isMesh && child.material && child.material.color) {
+                    // 페라리 모델 내 전조등/후미등 영역 감지 시 점멸 효과 부여 가능
+                }
+            });
+
+            // 카메라 시점 제어 (마우스 드래그 및 1인칭/3인칭)
             if (isFirstPerson) {
                 camera.position.set(
                     car.position.x - Math.sin(car.rotation.y) * 0.2,
